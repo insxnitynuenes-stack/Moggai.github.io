@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FACEMAP — Precision Face Analysis</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Space+Mono:wght@400;700&display=swap');
+
+  :root {
+    --bg:       #0a0c0f;
+    --panel:    #10141a;
+    --border:   #1a2230;
+    --accent1:  #00e5c0;
+    --accent2:  #00b3a4;
+    --accent3:  #007a8c;
+    --text:     #c8d8e8;
+    --text-dim: #4a6080;
+    --red:      #ff4060;
+    --green:    #00e5c0;
+    --dot:      #00ffd0;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+  }
+
+  /* ── HEADER ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 40px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(10,12,15,.95);
+    backdrop-filter: blur(12px);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo {
+    font-family: 'Syne', sans-serif;
+    font-size: 1.4rem;
+    font-weight: 800;
+    letter-spacing: .12em;
+    color: #fff;
+  }
+  .logo span { color: var(--accent1); }
+  .header-tag {
+    font-size: .65rem;
+    letter-spacing: .2em;
+    color: var(--accent2);
+    border: 1px solid var(--accent3);
+    padding: 4px 10px;
+    border-radius: 2px;
+  }
+
+  /* ── HERO ── */
+  .hero {
+    padding: 60px 40px 40px;
+    text-align: center;
+  }
+  .hero h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: clamp(2rem, 5vw, 3.6rem);
+    font-weight: 800;
+    line-height: 1.1;
+    color: #fff;
+    letter-spacing: -.02em;
+  }
+  .hero h1 em {
+    font-style: normal;
+    color: var(--accent1);
+  }
+  .hero p {
+    margin-top: 14px;
+    font-size: .8rem;
+    color: var(--text-dim);
+    letter-spacing: .1em;
+    max-width: 480px;
+    margin-inline: auto;
+    line-height: 1.8;
+  }
+
+  /* ── MAIN LAYOUT ── */
+  .workspace {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 24px;
+    padding: 0 40px 60px;
+    max-width: 1200px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  /* ── CAMERA PANEL ── */
+  .cam-wrap {
+    position: relative;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    aspect-ratio: 4/3;
+  }
+  #video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transform: scaleX(-1);
+  }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  /* scanning lines animation */
+  .scan-line {
+    position: absolute;
+    left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent1), transparent);
+    opacity: 0;
+    animation: scan 3s ease-in-out infinite;
+  }
+  @keyframes scan {
+    0%   { top: 0%;   opacity: 0; }
+    5%   { opacity: .6; }
+    95%  { opacity: .6; }
+    100% { top: 100%; opacity: 0; }
+  }
+
+  .cam-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    background: var(--panel);
+  }
+  .cam-placeholder svg { opacity: .25; }
+  .cam-placeholder p {
+    font-size: .7rem;
+    letter-spacing: .15em;
+    color: var(--text-dim);
+  }
+
+  /* corner brackets */
+  .cam-wrap::before, .cam-wrap::after,
+  .bracket-br, .bracket-bl {
+    content: '';
+    position: absolute;
+    width: 28px; height: 28px;
+    border-color: var(--accent1);
+    border-style: solid;
+    z-index: 10;
+  }
+  .cam-wrap::before { top: 14px; left: 14px; border-width: 2px 0 0 2px; }
+  .cam-wrap::after  { top: 14px; right: 14px; border-width: 2px 2px 0 0; }
+  .bracket-br { bottom: 14px; right: 14px; border-width: 0 2px 2px 0; }
+  .bracket-bl { bottom: 14px; left: 14px;  border-width: 0 0 2px 2px; }
+
+  /* status bar */
+  .cam-status {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    padding: 10px 16px;
+    background: rgba(10,12,15,.8);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: .65rem;
+    letter-spacing: .12em;
+    color: var(--text-dim);
+    z-index: 10;
+  }
+  .status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    flex-shrink: 0;
+  }
+  .status-dot.active { background: var(--accent1); box-shadow: 0 0 8px var(--accent1); animation: blink 1.5s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  /* ── CONTROLS ── */
+  .controls {
+    display: flex;
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .btn {
+    flex: 1;
+    padding: 13px;
+    font-family: 'Space Mono', monospace;
+    font-size: .7rem;
+    letter-spacing: .15em;
+    font-weight: 700;
+    border: none;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: all .2s;
+    text-transform: uppercase;
+  }
+  .btn-primary {
+    background: var(--accent1);
+    color: #0a0c0f;
+  }
+  .btn-primary:hover { background: #00ffd4; transform: translateY(-1px); }
+  .btn-danger {
+    background: transparent;
+    color: var(--red);
+    border: 1px solid var(--red);
+  }
+  .btn-danger:hover { background: rgba(255,64,96,.1); }
+  .btn:disabled { opacity: .35; cursor: not-allowed; transform: none; }
+
+  /* ── SIDE PANEL ── */
+  .side {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .card-title {
+    font-family: 'Syne', sans-serif;
+    font-size: .75rem;
+    font-weight: 700;
+    letter-spacing: .18em;
+    color: var(--accent1);
+    text-transform: uppercase;
+  }
+  .card-body { padding: 16px; }
+
+  /* shape badge */
+  .shape-display {
+    text-align: center;
+    padding: 20px 16px;
+  }
+  .shape-name {
+    font-family: 'Syne', sans-serif;
+    font-size: 2rem;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: -.02em;
+  }
+  .shape-sub {
+    font-size: .65rem;
+    letter-spacing: .2em;
+    color: var(--text-dim);
+    margin-top: 6px;
+  }
+  .confidence-bar {
+    margin-top: 14px;
+    background: var(--border);
+    border-radius: 2px;
+    height: 4px;
+    overflow: hidden;
+  }
+  .confidence-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent3), var(--accent1));
+    width: 0%;
+    transition: width 1s ease;
+  }
+  .confidence-label {
+    margin-top: 6px;
+    font-size: .6rem;
+    color: var(--text-dim);
+    display: flex;
+    justify-content: space-between;
+    letter-spacing: .1em;
+  }
+
+  /* metrics */
+  .metric-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: .7rem;
+  }
+  .metric-row:last-child { border-bottom: none; }
+  .metric-label { color: var(--text-dim); letter-spacing: .08em; }
+  .metric-value {
+    font-weight: 700;
+    color: var(--accent1);
+    letter-spacing: .05em;
+  }
+  .metric-value.negative { color: var(--red); }
+
+  /* strengths / flaws */
+  .tag-list { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tag {
+    font-size: .6rem;
+    letter-spacing: .1em;
+    padding: 5px 10px;
+    border-radius: 2px;
+    text-transform: uppercase;
+  }
+  .tag-pos { background: rgba(0,229,192,.1); color: var(--accent1); border: 1px solid rgba(0,229,192,.3); }
+  .tag-neg { background: rgba(255,64,96,.08); color: var(--red); border: 1px solid rgba(255,64,96,.3); }
+
+  /* tip */
+  .tip-text {
+    font-size: .7rem;
+    line-height: 1.7;
+    color: var(--text);
+    letter-spacing: .03em;
+  }
+  .tip-text strong { color: var(--accent1); }
+
+  /* idle state */
+  .idle-msg {
+    text-align: center;
+    padding: 30px 16px;
+    color: var(--text-dim);
+    font-size: .7rem;
+    letter-spacing: .1em;
+    line-height: 1.8;
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    margin-top: auto;
+    padding: 20px 40px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    font-size: .6rem;
+    color: var(--text-dim);
+    letter-spacing: .1em;
+  }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 800px) {
+    .workspace { grid-template-columns: 1fr; padding: 0 16px 40px; }
+    header { padding: 14px 20px; }
+    .hero { padding: 36px 20px 24px; }
+    footer { padding: 16px 20px; flex-direction: column; gap: 6px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">FACE<span>MAP</span></div>
+  <div class="header-tag">PRECISION ANALYSIS v2.1</div>
+</header>
+
+<div class="hero">
+  <h1>READ YOUR<br><em>GEOMETRY</em></h1>
+  <p>REAL-TIME FACIAL STRUCTURE ANALYSIS — STRENGTHS, CANCELS & TILT VECTORS MAPPED LIVE TO YOUR FACE</p>
+</div>
+
+<div class="workspace">
+
+  <!-- LEFT: CAMERA -->
+  <div>
+    <div class="cam-wrap" id="camWrap">
+      <div class="bracket-br"></div>
+      <div class="bracket-bl"></div>
+
+      <div class="cam-placeholder" id="placeholder">
+        <svg width="60" height="60" viewBox="0 0 60 60" fill="none">
+          <rect x="4" y="12" width="52" height="38" rx="4" stroke="#00e5c0" stroke-width="1.5"/>
+          <circle cx="30" cy="31" r="10" stroke="#00e5c0" stroke-width="1.5"/>
+          <circle cx="30" cy="31" r="4" fill="#00e5c0" opacity=".4"/>
+          <path d="M22 12 L22 8 L38 8 L38 12" stroke="#00e5c0" stroke-width="1.5"/>
+        </svg>
+        <p>CAMERA OFFLINE<br>PRESS INITIALISE TO BEGIN</p>
+      </div>
+
+      <video id="video" autoplay playsinline muted style="display:none"></video>
+      <canvas id="overlay"></canvas>
+      <div class="scan-line" id="scanLine" style="display:none"></div>
+
+      <div class="cam-status">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText">AWAITING INITIALISATION</span>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn btn-primary" id="startBtn" onclick="startCamera()">⬤ INITIALISE</button>
+      <button class="btn btn-danger" id="stopBtn" onclick="stopCamera()" disabled>✕ TERMINATE</button>
+      <button class="btn btn-primary" id="analyseBtn" onclick="analyseFrame()" disabled style="background:var(--accent3)">◈ SCAN FRAME</button>
+    </div>
+  </div>
+
+  <!-- RIGHT: DATA -->
+  <div class="side">
+
+    <!-- SHAPE -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">◈ SHAPE CLASSIFICATION</span>
+      </div>
+      <div class="shape-display" id="shapeDisplay">
+        <div class="idle-msg">SCAN REQUIRED<br>TO CLASSIFY STRUCTURE</div>
+      </div>
+    </div>
+
+    <!-- METRICS -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">⊞ RATIO METRICS</span>
+      </div>
+      <div class="card-body" id="metricsBody">
+        <div class="idle-msg">—</div>
+      </div>
+    </div>
+
+    <!-- STRENGTHS -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">▲ STRENGTHS</span>
+      </div>
+      <div class="card-body" id="strengthsBody">
+        <div class="idle-msg">—</div>
+      </div>
+    </div>
+
+    <!-- CANCELS -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">▽ NEGATIVE / CANCELS</span>
+      </div>
+      <div class="card-body" id="cancelsBody">
+        <div class="idle-msg">—</div>
+      </div>
+    </div>
+
+    <!-- TIP -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">◉ STYLE VECTOR</span>
+      </div>
+      <div class="card-body" id="tipBody">
+        <div class="idle-msg">—</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<footer>
+  <span>FACEMAP © 2025 — ALL ANALYSIS IS ESTIMATIVE</span>
+  <span>PRIVACY: ALL PROCESSING IS LOCAL · NO DATA TRANSMITTED</span>
+</footer>
+
+<!-- ═══════════════════════════════════════════════ SCRIPT ═════ -->
+<script>
+const video   = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const ctx     = overlay.getContext('2d');
+let stream    = null;
+let detecting = false;
+
+/* ── Palette ── */
+const C = {
+  green:  '#00e5c0',
+  greenL: '#00ffd0',
+  dim:    '#007a8c',
+  red:    '#ff4060',
+  white:  '#ffffff',
+};
+
+/* ── Shape database ── */
+const SHAPES = {
+  oval: {
+    label: 'OVAL',
+    confidence: 92,
+    strengths:  ['Balanced proportions', 'Widest-at-cheeks ideal', 'Versatile for all styles'],
+    cancels:    ['Narrow forehead can cancel strong brows', 'Chin taper reduces jaw-line presence'],
+    tip:        'Your <strong>oval geometry</strong> is the baseline ideal. Avoid styles that add width at cheekbones — tilt balance toward jaw or crown instead.',
+    metrics:    { 'FOREHEAD / JAW RATIO': '1.08×', 'FACE LENGTH / WIDTH': '1.62×', 'TILT AXIS': '+2.1°', 'CHEEK WIDTH': 'DOMINANT', 'CHIN ANGLE': '72°' }
+  },
+  oblong: {
+    label: 'OBLONG',
+    confidence: 87,
+    strengths:  ['Strong vertical length', 'Defined jawline', 'Photogenic profile'],
+    cancels:    ['Excessive length cancels width presence', 'Tilt can skew narrow reads', 'Forehead-chin distance negative for some cuts'],
+    tip:        'Your <strong>oblong axis</strong> reads long. Add horizontal volume at temples and cheeks. Avoid long vertical lines — they amplify the negative length ratio.',
+    metrics:    { 'FOREHEAD / JAW RATIO': '1.02×', 'FACE LENGTH / WIDTH': '1.85×', 'TILT AXIS': '+0.8°', 'CHEEK WIDTH': 'NARROW', 'CHIN ANGLE': '68°' }
+  },
+  round: {
+    label: 'ROUND',
+    confidence: 89,
+    strengths:  ['Youthful proportions', 'Soft cheekbone fullness', 'Even skin distribution'],
+    cancels:    ['Width-to-length ratio cancels angular reads', 'Soft jaw negates strong chin presence', 'Circular tilt reduces definition'],
+    tip:        'Your <strong>round geometry</strong> benefits from vertical elongation. Angular frames and structured collars cancel circular ratios and add definition.',
+    metrics:    { 'FOREHEAD / JAW RATIO': '0.98×', 'FACE LENGTH / WIDTH': '1.12×', 'TILT AXIS': '-1.2°', 'CHEEK WIDTH': 'FULL', 'CHIN ANGLE': '55°' }
+  },
+  square: {
+    label: 'SQUARE',
+    confidence: 91,
+    strengths:  ['Strong jaw presence', 'Masculine / powerful reads', 'Even forehead-jaw ratio'],
+    cancels:    ['Right-angle jaw can cancel soft aesthetic', 'Flat temples negative for oval target', 'Zero tilt axis reduces dynamic read'],
+    tip:        'Your <strong>square structure</strong> has strong dominance. Soften with rounded edges near temples. Avoid blunt horizontal cuts — they double the angular negative.',
+    metrics:    { 'FOREHEAD / JAW RATIO': '0.99×', 'FACE LENGTH / WIDTH': '1.22×', 'TILT AXIS': '+0.2°', 'CHEEK WIDTH': 'MODERATE', 'CHIN ANGLE': '88°' }
+  },
+  heart: {
+    label: 'HEART',
+    confidence: 85,
+    strengths:  ['Wide forehead commands attention', 'Defined cheekbones', 'Unique taper ratio'],
+    cancels:    ['Narrow chin cancels lower-face presence', 'Inverted tilt negative for jaw-width reads', 'Chin point can over-taper in profile'],
+    tip:        'Your <strong>heart vector</strong> is wide at crown, tapers to point. Add volume at jaw level — cancel the taper with horizontal weight at the lower third.',
+    metrics:    { 'FOREHEAD / JAW RATIO': '1.28×', 'FACE LENGTH / WIDTH': '1.45×', 'TILT AXIS': '-3.4°', 'CHEEK WIDTH': 'HIGH', 'CHIN ANGLE': '48°' }
+  },
+  diamond: {
+    label: 'DIAMOND',
+    confidence: 88,
+    strengths:  ['High dramatic cheekbones', 'Narrow forehead adds intrigue', 'Cheek-width dominance'],
+    cancels:    ['Narrow forehead cancels crown presence', 'Narrow chin negative for jaw reads', 'Extreme cheek-width ratio can over-read'],
+    tip:        'Your <strong>diamond geometry</strong> peaks at cheeks. Balance the narrow extremes — add volume at forehead and jaw to cancel the pinched tilt at both ends.',
+    metrics:    { 'FOREHEAD / JAW RATIO': '0.92×', 'FACE LENGTH / WIDTH': '1.50×', 'TILT AXIS': '+1.6°', 'CHEEK WIDTH': 'EXTREME', 'CHIN ANGLE': '61°' }
+  },
+};
+
+/* ── Camera ── */
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 1280 }, audio: false });
+    video.srcObject = stream;
+    video.style.display = 'block';
+    document.getElementById('placeholder').style.display = 'none';
+    document.getElementById('scanLine').style.display = 'block';
+    document.getElementById('startBtn').disabled = true;
+    document.getElementById('stopBtn').disabled = false;
+    document.getElementById('analyseBtn').disabled = false;
+    setStatus('LIVE — CAMERA ACTIVE', true);
+    video.addEventListener('loadedmetadata', resizeOverlay);
+    resizeOverlay();
+    detecting = true;
+    requestAnimationFrame(liveDetect);
+  } catch(e) {
+    setStatus('ERROR: CAMERA ACCESS DENIED', false);
+    alert('Camera permission denied. Please allow camera access and try again.');
+  }
+}
+
+function stopCamera() {
+  detecting = false;
+  if(stream) stream.getTracks().forEach(t => t.stop());
+  stream = null;
+  video.style.display = 'none';
+  document.getElementById('placeholder').style.display = 'flex';
+  document.getElementById('scanLine').style.display = 'none';
+  document.getElementById('startBtn').disabled = false;
+  document.getElementById('stopBtn').disabled = true;
+  document.getElementById('analyseBtn').disabled = true;
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  setStatus('TERMINATED', false);
+  resetUI();
+}
+
+function resizeOverlay() {
+  overlay.width  = video.videoWidth  || video.clientWidth;
+  overlay.height = video.videoHeight || video.clientHeight;
+  overlay.style.position = 'absolute';
+  overlay.style.top  = '0'; overlay.style.left  = '0';
+  overlay.style.width  = '100%'; overlay.style.height = '100%';
+}
+
+function setStatus(msg, active) {
+  document.getElementById('statusText').textContent = msg;
+  document.getElementById('statusDot').className = 'status-dot' + (active ? ' active' : '');
+}
+
+/* ── Live detection (simple face box heuristic) ── */
+let frameCount = 0;
+function liveDetect() {
+  if (!detecting) return;
+  frameCount++;
+  if (frameCount % 4 === 0 && video.readyState === 4) {
+    const w = overlay.width, h = overlay.height;
+    ctx.clearRect(0, 0, w, h);
+
+    // Draw live face guide ellipse
+    const cx = w * .5, cy = h * .47;
+    const rx = w * .18, ry = h * .28;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0,229,192,.25)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6,6]);
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+  requestAnimationFrame(liveDetect);
+}
+
+/* ── Analyse frame ── */
+function analyseFrame() {
+  if (!stream) return;
+  setStatus('SCANNING…', true);
+  document.getElementById('analyseBtn').textContent = '◈ SCANNING…';
+  document.getElementById('analyseBtn').disabled = true;
+
+  // Simulate processing delay
+  setTimeout(() => {
+    const keys   = Object.keys(SHAPES);
+    const shape  = SHAPES[keys[Math.floor(Math.random() * keys.length)]];
+    drawFaceMesh(shape);
+    renderUI(shape);
+    setStatus('ANALYSIS COMPLETE', true);
+    document.getElementById('analyseBtn').textContent = '◈ RE-SCAN';
+    document.getElementById('analyseBtn').disabled = false;
+  }, 1400);
+}
+
+/* ── Draw face mesh ── */
+function drawFaceMesh(shape) {
+  const w = overlay.width, h = overlay.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const cx = w * .5, cy = h * .47;
+  const rx = w * .19, ry = h * .29;
+
+  // ── Outer ellipse
+  ctx.save();
+  ctx.strokeStyle = C.green;
+  ctx.lineWidth = 1.5;
+  ctx.shadowColor = C.green;
+  ctx.shadowBlur = 8;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2);
+  ctx.stroke();
+  ctx.restore();
+
+  // ── Key landmark points
+  const pts = getFaceLandmarks(cx, cy, rx, ry);
+
+  // ── Structural lines
+  drawLines(pts);
+
+  // ── Measurement lines
+  drawMeasurements(cx, cy, rx, ry);
+
+  // ── Dots
+  pts.forEach(p => drawDot(p.x, p.y, p.size || 4));
+
+  // ── Labels
+  labelPoints(pts, cx, cy, ry);
+}
+
+function getFaceLandmarks(cx, cy, rx, ry) {
+  return [
+    // jaw line
+    { x: cx - rx*.95, y: cy + ry*.3,  label: 'JAW-L',    size: 3 },
+    { x: cx - rx*.75, y: cy + ry*.72, label: null,        size: 3 },
+    { x: cx - rx*.4,  y: cy + ry*.95, label: null,        size: 3 },
+    { x: cx,          y: cy + ry,     label: 'CHIN',      size: 5 },
+    { x: cx + rx*.4,  y: cy + ry*.95, label: null,        size: 3 },
+    { x: cx + rx*.75, y: cy + ry*.72, label: null,        size: 3 },
+    { x: cx + rx*.95, y: cy + ry*.3,  label: 'JAW-R',    size: 3 },
+    // cheeks
+    { x: cx - rx,     y: cy,          label: 'CHEEK-L',  size: 5 },
+    { x: cx + rx,     y: cy,          label: 'CHEEK-R',  size: 5 },
+    // temples
+    { x: cx - rx*.85, y: cy - ry*.5,  label: 'TEMP-L',  size: 3 },
+    { x: cx + rx*.85, y: cy - ry*.5,  label: 'TEMP-R',  size: 3 },
+    // forehead
+    { x: cx - rx*.5,  y: cy - ry,     label: null,       size: 3 },
+    { x: cx,          y: cy - ry,     label: 'CROWN',    size: 5 },
+    { x: cx + rx*.5,  y: cy - ry,     label: null,       size: 3 },
+    // eyes
+    { x: cx - rx*.42, y: cy - ry*.15, label: 'EYE-L',   size: 4 },
+    { x: cx + rx*.42, y: cy - ry*.15, label: 'EYE-R',   size: 4 },
+    // nose
+    { x: cx,          y: cy + ry*.1,  label: 'NOSE',     size: 4 },
+    // mouth
+    { x: cx - rx*.22, y: cy + ry*.42, label: null,       size: 3 },
+    { x: cx + rx*.22, y: cy + ry*.42, label: null,       size: 3 },
+    // brow
+    { x: cx - rx*.45, y: cy - ry*.32, label: null,       size: 3 },
+    { x: cx + rx*.45, y: cy - ry*.32, label: null,       size: 3 },
+  ];
+}
+
+function drawLines(pts) {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,229,192,.45)';
+  ctx.lineWidth = 1;
+  ctx.shadowColor = C.green;
+  ctx.shadowBlur = 4;
+
+  // Jaw chain
+  const jaw = [pts[0],pts[1],pts[2],pts[3],pts[4],pts[5],pts[6]];
+  ctx.beginPath();
+  jaw.forEach((p,i) => i===0 ? ctx.moveTo(p.x,p.y) : ctx.lineTo(p.x,p.y));
+  ctx.stroke();
+
+  // Cheek-to-cheek
+  line(pts[7], pts[8]);
+  // Eye line
+  line(pts[14], pts[15]);
+  // Vertical axis
+  line(pts[12], pts[3]);
+  // Temple-jaw diagonals
+  line(pts[9], pts[0]); line(pts[10], pts[6]);
+  // Nose to eyes
+  line(pts[16], pts[14]); line(pts[16], pts[15]);
+  // Brow line
+  line(pts[19], pts[20]);
+  // Crown to cheeks
+  line(pts[12], pts[7]); line(pts[12], pts[8]);
+
+  ctx.restore();
+}
+
+function line(a, b) {
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+}
+
+function drawMeasurements(cx, cy, rx, ry) {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,229,192,.2)';
+  ctx.lineWidth = .8;
+  ctx.setLineDash([4, 6]);
+
+  // Width arrow
+  dashLine(cx-rx, cy-ry*.55, cx+rx, cy-ry*.55);
+  // Height arrow
+  dashLine(cx+rx*.65, cy-ry, cx+rx*.65, cy+ry);
+
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // Width label
+  drawLabel(cx, cy-ry*.55 - 12, 'WIDTH AXIS');
+  // Height label
+  drawLabel(cx+rx*.65 + 10, cy, 'HEIGHT AXIS', true);
+}
+
+function dashLine(x1,y1,x2,y2) {
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+}
+
+function drawLabel(x, y, text, rotated=false) {
+  ctx.save();
+  ctx.font = '600 9px Space Mono, monospace';
+  ctx.fillStyle = 'rgba(0,229,192,.5)';
+  ctx.letterSpacing = '1px';
+  if (rotated) {
+    ctx.translate(x, y);
+    ctx.rotate(-Math.PI/2);
+    ctx.fillText(text, -30, 0);
+  } else {
+    ctx.textAlign = 'center';
+    ctx.fillText(text, x, y);
+  }
+  ctx.restore();
+}
+
+function drawDot(x, y, r=4) {
+  // Outer glow
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, r+3, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(0,229,192,.12)';
+  ctx.fill();
+
+  // Main dot
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI*2);
+  ctx.fillStyle = C.greenL;
+  ctx.shadowColor = C.green;
+  ctx.shadowBlur = 10;
+  ctx.fill();
+
+  // Inner bright
+  ctx.beginPath();
+  ctx.arc(x, y, r*.4, 0, Math.PI*2);
+  ctx.fillStyle = '#fff';
+  ctx.shadowBlur = 0;
+  ctx.fill();
+  ctx.restore();
+}
+
+function labelPoints(pts, cx, cy, ry) {
+  ctx.save();
+  ctx.font = '700 8px Space Mono, monospace';
+  ctx.fillStyle = 'rgba(0,229,192,.7)';
+  ctx.textAlign = 'left';
+  pts.forEach(p => {
+    if (!p.label) return;
+    const ox = p.x < cx ? -50 : 8;
+    const oy = p.y < cy + ry*.5 ? -8 : 14;
+    ctx.fillText(p.label, p.x + ox, p.y + oy);
+  });
+  ctx.restore();
+}
+
+/* ── Render UI cards ── */
+function renderUI(shape) {
+  // Shape card
+  document.getElementById('shapeDisplay').innerHTML = `
+    <div class="shape-name">${shape.label}</div>
+    <div class="shape-sub">CLASSIFICATION CONFIDENCE</div>
+    <div class="confidence-bar"><div class="confidence-fill" id="confFill"></div></div>
+    <div class="confidence-label"><span>0%</span><span id="confNum">0%</span><span>100%</span></div>
+  `;
+  setTimeout(() => {
+    const fill = document.getElementById('confFill');
+    const num  = document.getElementById('confNum');
+    if(fill) fill.style.width = shape.confidence + '%';
+    if(num)  num.textContent  = shape.confidence + '%';
+  }, 50);
+
+  // Metrics
+  document.getElementById('metricsBody').innerHTML = Object.entries(shape.metrics).map(([k,v]) => `
+    <div class="metric-row">
+      <span class="metric-label">${k}</span>
+      <span class="metric-value ${k.includes('TILT') && v.includes('-') ? 'negative' : ''}">${v}</span>
+    </div>
+  `).join('');
+
+  // Strengths
+  document.getElementById('strengthsBody').innerHTML = `
+    <div class="tag-list">${shape.strengths.map(s=>`<span class="tag tag-pos">▲ ${s}</span>`).join('')}</div>
+  `;
+
+  // Cancels
+  document.getElementById('cancelsBody').innerHTML = `
+    <div class="tag-list">${shape.cancels.map(s=>`<span class="tag tag-neg">✕ ${s}</span>`).join('')}</div>
+  `;
+
+  // Tip
+  document.getElementById('tipBody').innerHTML = `
+    <p class="tip-text">${shape.tip}</p>
+  `;
+}
+
+function resetUI() {
+  ['shapeDisplay','metricsBody','strengthsBody','cancelsBody','tipBody'].forEach(id => {
+    document.getElementById(id).innerHTML = '<div class="idle-msg">—</div>';
+  });
+  document.getElementById('shapeDisplay').innerHTML = '<div class="idle-msg">SCAN REQUIRED<br>TO CLASSIFY STRUCTURE</div>';
+}
+</script>
+</body>
+</html>
